@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --shik-bg: #0a0a0f;
+  --shik-surface: #12121a;
+  --shik-surface-light: #1a1a25;
+  --shik-border: #2a2a3a;
+  --shik-accent: #6366f1;
+  --shik-accent-light: #818cf8;
+  --shik-text: #e2e8f0;
+  --shik-text-muted: #94a3b8;
+  --shik-success: #10b981;
+  --shik-warning: #f59e0b;
+  --shik-danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--shik-bg);
+  color: var(--shik-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Status indicator pulse */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulse-live {
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--shik-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--shik-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--shik-accent);
+}
