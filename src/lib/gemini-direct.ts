@@ -66,13 +66,13 @@ When you learn something new about the person — their name, role, project, exp
 Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBlock}`;
 
       // Connect to Gemini Live
-      this.session = await ai.live.connect({
+      console.log('Calling ai.live.connect...');
+      const liveSession = await ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
           onopen: () => {
-            console.log('Gemini Live connected');
-            this.callbacks.onConnected();
-            this.callbacks.onStatusChange('listening');
+            console.log('Gemini Live WebSocket opened');
+            // Don't call onConnected here - wait for session to be assigned
           },
           onmessage: (message: any) => {
             this.handleMessage(message);
@@ -95,6 +95,16 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
           outputAudioTranscription: {}
         }
       });
+      
+      console.log('ai.live.connect returned:', liveSession);
+      console.log('Session type:', typeof liveSession);
+      console.log('Session keys:', liveSession ? Object.keys(liveSession) : 'null');
+      this.session = liveSession;
+      console.log('this.session assigned:', !!this.session);
+      
+      // Now that session is assigned, notify UI
+      this.callbacks.onConnected();
+      this.callbacks.onStatusChange('listening');
 
       return true;
     } catch (error) {
@@ -262,8 +272,10 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
       console.log('Recording started with interval-based capture');
       
       let chunkCount = 0;
+      console.log('Starting capture interval, session exists:', !!this.session);
       const captureInterval = setInterval(() => {
         if (!this.isRecording || !this.session) {
+          console.log('Capture stopped - isRecording:', this.isRecording, 'session:', !!this.session);
           clearInterval(captureInterval);
           return;
         }
@@ -272,7 +284,7 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
         
         // Check amplitude
         const maxVal = Math.max(...Array.from(dataArray).map(Math.abs));
-        if (chunkCount % 20 === 0) {
+        if (chunkCount % 5 === 0) {
           console.log(`Audio capture ${chunkCount}, amplitude: ${maxVal.toFixed(4)}`);
         }
         chunkCount++;
@@ -298,7 +310,10 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
   }
 
   private sendAudioChunk(pcmData: Int16Array) {
-    if (!this.session) return;
+    if (!this.session) {
+      console.log('sendAudioChunk: no session');
+      return;
+    }
 
     // Convert Int16 to base64
     const uint8 = new Uint8Array(pcmData.buffer);
@@ -308,7 +323,7 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
     }
     const base64 = btoa(binary);
 
-    // Send via SDK's sendRealtimeInput
+    // Send via SDK's sendRealtimeInput method (not .send())
     try {
       this.session.sendRealtimeInput({
         media: {
@@ -377,6 +392,10 @@ Keep responses under 30 seconds spoken. Be conversational, not formal.${memoryBl
     } catch (e) {
       console.error('Error sending image:', e);
     }
+  }
+
+  isSessionActive(): boolean {
+    return !!this.session;
   }
 
   disconnect(): void {

@@ -61,9 +61,10 @@ export default function ShikLive() {
     return null;
   };
 
-  // Initialize Gemini Direct client
+  // Initialize Gemini Direct client (only once!)
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (geminiRef.current) return;  // Don't recreate if already exists
 
     geminiRef.current = new GeminiDirectClient({
       onConnected: () => {
@@ -163,7 +164,8 @@ export default function ShikLive() {
     return () => {
       geminiRef.current?.disconnect();
     };
-  }, [kernel]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // Empty array - only create client once
 
   const startVisualCapture = async (type: 'camera' | 'screen') => {
     try {
@@ -224,6 +226,7 @@ export default function ShikLive() {
   };
 
   const startSession = async () => {
+    if (isConnected || geminiRef.current?.isSessionActive()) return;  // Prevent double connect
     kernel.addEvent('session_starting', 'Connecting to Gemini Live...');
     
     // Start Firestore session first
