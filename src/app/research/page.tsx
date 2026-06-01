@@ -147,11 +147,11 @@ C = ⟨ I, E, R ⟩                // runtime configuration`}
             </div>
             <div className="p-3 rounded bg-[var(--shik-surface)] border border-[var(--shik-border)]">
               <h3 className="text-white font-semibold mb-1">2 · Operational Layer</h3>
-              <p className="text-[var(--shik-text-muted)] text-xs">Capability/environment registry + cognition adapter that builds model inputs from <span className="font-mono">P, M, H</span> and parses outputs into memory updates, and selects among engines. <span className="text-[var(--shik-warning)]">Partial — engine swap + memory injection are wired; a full capability registry is future work.</span></p>
+              <p className="text-[var(--shik-text-muted)] text-xs">A model-agnostic <strong className="text-[var(--shik-text)]">cognition adapter</strong> (<span className="font-mono">cognition-adapter.ts</span> + <span className="font-mono">/api/cognition</span>) builds model inputs from <span className="font-mono">P, M, H</span> and dispatches to a pluggable engine — Gemini, a self-hosted Llama via Ollama, or Claude. <span className="text-[var(--shik-success)]">Implemented:</span> the engine selector routes real text turns; identity is untouched on swap. <span className="text-[var(--shik-warning)]">A full capability/tool registry is future work.</span></p>
             </div>
             <div className="p-3 rounded bg-[var(--shik-surface)] border border-[var(--shik-border)]">
               <h3 className="text-white font-semibold mb-1">3 · Network &amp; Social Layer</h3>
-              <p className="text-[var(--shik-text-muted)] text-xs">Sync/replication engine, trust &amp; credentials, and the inter-agent protocol handler. <span className="text-[var(--shik-warning)]">The SHIK Handshake v0 builder/verifier is implemented; multi-node sync is future work.</span></p>
+              <p className="text-[var(--shik-text-muted)] text-xs">A standalone <strong className="text-[var(--shik-text)]">kernel daemon</strong> (<span className="font-mono">kernel-daemon/</span>) runs on a Raspberry Pi and performs the SHIK Handshake v0 over HTTP with cryptographic signature verification, key↔id binding, a social graph, and evolving trust. <span className="text-[var(--shik-success)]">Implemented &amp; verified node-to-node.</span> <span className="text-[var(--shik-warning)]">Replicated multi-node state sync is future work.</span></p>
             </div>
           </div>
         </Section>
@@ -188,10 +188,16 @@ C = ⟨ I, E, R ⟩                // runtime configuration`}
           </div>
         </Section>
 
-        <Section id="gaps" title="What is still missing (and why that's good for a thesis)">
-          <p>An honest gap analysis — each item is a defensible PhD work package:</p>
+        <Section id="gaps" title="Built vs. still missing">
+          <p>
+            <span className="text-[var(--shik-success)]">Now implemented &amp; verified:</span> a self-hosted{' '}
+            <strong className="text-[var(--shik-text)]">kernel daemon</strong> (<span className="font-mono">kernel-daemon/</span>, runs on a Raspberry Pi)
+            that performs real signed node-to-node SHIK handshakes; a model-agnostic{' '}
+            <strong className="text-[var(--shik-text)]">cognition adapter</strong> so the engine (Gemini / local Llama / Claude) is swappable
+            with no cloud lock-in; and the full <span className="font-mono">I = ⟨id,K,P,M,H⟩</span> kernel with live invariants and signed export/import.
+          </p>
+          <p>An honest remaining-gap analysis — each item is a defensible PhD work package:</p>
           <ul className="list-disc pl-5 space-y-1 text-[var(--shik-text-muted)]">
-            <li><strong className="text-[var(--shik-text)]">True self-hosted kernel daemon.</strong> Today the kernel lives in the browser. The paper&apos;s claim is a small service on a Raspberry Pi / Jetson exposing <span className="font-mono">POST /shik/handshake</span> and a &quot;who am I&quot; API. Building that daemon (e.g. Rust/Go + SQLite/embedded DB) is the central systems contribution.</li>
             <li><strong className="text-[var(--shik-text)]">Decentralized replication &amp; conflict resolution (4.6).</strong> CRDT- or Merkle-DAG-based sync across multiple kernel instances, with partial replication (share some memories, keep others local).</li>
             <li><strong className="text-[var(--shik-text)]">DID/VC interoperability.</strong> Bind <span className="font-mono">did:shik</span> to W3C DID methods and verify real verifiable credentials, not placeholders.</li>
             <li><strong className="text-[var(--shik-text)]">Memory summarization &amp; pruning</strong> with provable continuity (the update functions u_M, u_P from the paper).</li>

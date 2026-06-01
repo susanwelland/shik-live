@@ -6,7 +6,18 @@ import { useKernel } from '@/lib/use-kernel';
 import { useIdentity } from '@/lib/use-identity';
 import IdentityKernelPanel from '@/components/IdentityKernelPanel';
 import { extractKernelUpdates } from '@/lib/extract-kernel';
+import { runCognition, EngineId } from '@/lib/cognition-adapter';
 import Link from 'next/link';
+
+// Map the engine-selector label (identity.activeEngine) to an adapter engine id.
+// The "native audio" engine is the realtime voice path (Gemini Live); the rest
+// are text-mode engines routed through the model-agnostic cognition adapter.
+function resolveEngine(label: string): { live: boolean; id: EngineId } {
+  if (label.includes('native audio')) return { live: true, id: 'gemini' };
+  if (label.toLowerCase().includes('local') || label.toLowerCase().includes('llama')) return { live: false, id: 'ollama' };
+  if (label.toLowerCase().includes('claude')) return { live: false, id: 'claude' };
+  return { live: false, id: 'gemini' };
+}
 
 interface Message {
   role: 'user' | 'agent';
@@ -281,7 +292,10 @@ export default function ShikLive() {
   };
 
   const sendTextMessage = async (text: string) => {
-    if (!text.trim() || !isConnected) return;
+    if (!text.trim()) return;
+
+    const engine = resolveEngine(identity.activeEngine);
+    if (engine.live && !isConnected) return;
 
     pendingUserMessageRef.current = text;  // Store for extraction
 
@@ -301,7 +315,37 @@ export default function ShikLive() {
     kernel.addContext(text.slice(0, 100), 'voice');
 
     setStatus('thinking');
-    geminiRef.current?.sendText(text);
+
+    if (engine.live) {
+      // Realtime voice engine (Gemini Live) — streamed via the websocket session
+      geminiRef.current?.sendText(text);
+      return;
+    }
+
+    // Model-agnostic cognition adapter path: same identity kernel, swapped engine.
+    kernel.addEvent('cognition_dispatch', `Routing turn to ${engine.id} (identity unchanged)`);
+    try {
+      const result = await runCognition({
+        engine: engine.id,
+        message: text,
+        context: {
+          id: identity.identity?.id || 'did:shik:unknown',
+          roles: identity.identity?.roles || [],
+          policies: (identity.identity?.policies || []).map(p => p.statement),
+          memories: (identity.identity?.memory || []).map(m => m.content),
+          historyTip: identity.commitments?.history_tip,
+        },
+      });
+      setMessages(prev => [...prev, { role: 'agent', content: result.text, timestamp: new Date() }]);
+      kernel.incrementTurn();
+      identity.noteTurn(`Agent (${engine.id}): ${result.text.slice(0, 56)}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMessages(prev => [...prev, { role: 'agent', content: `⚠️ ${engine.id} unavailable: ${msg}`, timestamp: new Date() }]);
+      kernel.addEvent('error', msg);
+    } finally {
+      setStatus('idle');
+    }
   };
 
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -311,6 +355,11 @@ export default function ShikLive() {
       setTextInput('');
     }
   };
+
+  // The realtime voice engine needs a live session; text-mode engines (routed
+  // through the cognition adapter) work without one — that IS model independence.
+  const activeEngine = resolveEngine(identity.activeEngine);
+  const canType = (activeEngine.live ? isConnected : true) && status !== 'thinking' && status !== 'speaking';
 
   return (
     <div className="h-screen flex flex-col bg-[var(--shik-bg)]">
@@ -435,13 +484,13 @@ export default function ShikLive() {
                 type="text"
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                placeholder={isConnected ? "Type a message..." : "Start session first"}
-                disabled={!isConnected || status === 'thinking' || status === 'speaking'}
+                placeholder={canType ? (activeEngine.live ? "Type a message..." : `Type a message (${activeEngine.id})...`) : "Start session first"}
+                disabled={!canType}
                 className="flex-1 px-3 py-2 rounded text-sm bg-[var(--shik-surface-light)] border border-[var(--shik-border)] text-white placeholder-[var(--shik-text-muted)] disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={!isConnected || !textInput.trim() || status === 'thinking' || status === 'speaking'}
+                disabled={!canType || !textInput.trim()}
                 className="px-4 py-2 rounded text-sm font-medium bg-[var(--shik-accent)] text-white disabled:opacity-50"
               >
                 Send

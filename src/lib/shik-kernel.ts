@@ -451,7 +451,21 @@ function stripPrivate(state: IdentityState): IdentityState {
 }
 
 function canonical(obj: unknown): string {
-  return JSON.stringify(obj, Object.keys(obj as object).sort());
+  return JSON.stringify(sortDeep(obj));
+}
+
+/** Recursively sort object keys so the serialization is deterministic and a
+ *  signature commits to every field at every depth (not just the top level). */
+function sortDeep(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortDeep);
+  if (v && typeof v === 'object') {
+    const src = v as Record<string, unknown>;
+    return Object.keys(src).sort().reduce<Record<string, unknown>>((acc, k) => {
+      acc[k] = sortDeep(src[k]);
+      return acc;
+    }, {});
+  }
+  return v;
 }
 
 // ============================================================================
@@ -503,7 +517,7 @@ export async function buildHandshake(
     direction,
     ...(inReplyTo ? { in_reply_to: inReplyTo } : {}),
     shik_id: state.id,
-    key_id: state.id + state.activeKey.keyId,
+    key_id: state.activeKey.keyId,
     public_key: state.activeKey.publicKeyB58,
     instance_nonce: randomNonce(),
     self_profile: {
@@ -522,8 +536,39 @@ export async function buildHandshake(
   return { ...base, signature };
 }
 
+/** Cryptographically verify a handshake using the raw public key embedded in
+ *  the message itself (no out-of-band JWK needed), and confirm the key is
+ *  bound to the claimed did:shik id (self-certifying identifier). This is what
+ *  lets two SHIK daemons recognize each other over an untrusted network. */
+export async function verifyHandshakeSignature(msg: HandshakeMessage): Promise<{ ok: boolean; reason: string }> {
+  if (!hasSubtle()) return { ok: false, reason: 'WebCrypto unavailable.' };
+  if (!msg.signature?.startsWith('z')) return { ok: false, reason: 'Malformed signature.' };
+  try {
+    // 1. Reconstruct the verifying key from the raw base58 public key.
+    const raw = base58ToBytes(msg.public_key);
+    const key = await crypto.subtle.importKey(
+      'raw', raw, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'],
+    );
+    // 2. Check the id is self-certifying: did derived from this key matches.
+    const derived = await deriveDid({ publicKeyB58: msg.public_key } as KeyMaterial);
+    if (derived !== msg.shik_id) {
+      return { ok: false, reason: 'shik_id is not bound to the presented key.' };
+    }
+    // 3. Verify the detached signature over the canonical message.
+    const { signature, ...rest } = msg;
+    const sigBytes = base58ToBytes(signature.slice(1));
+    const valid = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' }, key, sigBytes, enc.encode(canonical(rest)),
+    );
+    return { ok: valid, reason: valid ? 'Signature valid and key bound to id.' : 'Signature does not verify.' };
+  } catch (e) {
+    return { ok: false, reason: 'Verification error: ' + String(e) };
+  }
+}
+
 export interface HandshakeVerification {
   signatureValid: boolean;
+  signatureReason: string;
   continuity: InvariantResult[];
   summary: string;
 }
@@ -534,12 +579,8 @@ export async function verifyHandshake(
   msg: HandshakeMessage,
   previous?: { key_id: string; public_key: string; state_commitments: StateCommitments; policy_governance_seen?: boolean },
 ): Promise<HandshakeVerification> {
-  const { signature, ...rest } = msg;
-  const signatureValid = await verifyDetached(
-    // Reconstruct the public key as a JWK is not transmitted in v0; we verify
-    // structurally here and rely on the b58 key + lineage for binding.
-    {} as JsonWebKey, canonical(rest), signature,
-  ).catch(() => false) || signature.startsWith('z'); // tolerate cross-node demo
+  const sig = await verifyHandshakeSignature(msg);
+  const signatureValid = sig.ok;
 
   const continuity: InvariantResult[] = [];
   if (previous) {
@@ -575,14 +616,15 @@ export async function verifyHandshake(
   const allOk = signatureValid && continuity.every((c) => c.ok);
   return {
     signatureValid,
+    signatureReason: sig.reason,
     continuity,
     summary: previous
       ? allOk
         ? 'Recognized counterpart — identity continuity holds.'
         : 'Continuity check raised a flag — see invariants.'
       : signatureValid
-        ? 'First encounter — signature well-formed; peer recorded in social graph.'
-        : 'Signature malformed.',
+        ? 'First encounter — signature verified; peer recorded in social graph.'
+        : 'Signature rejected: ' + sig.reason,
   };
 }
 

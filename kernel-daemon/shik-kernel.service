@@ -1,0 +1,26 @@
+[Unit]
+Description=SHIK Self-Hosted Identity Kernel daemon
+Documentation=https://github.com/susanwelland/shik-live
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User and WorkingDirectory to match your install (default: pi user).
+User=pi
+WorkingDirectory=/home/pi/shik-live
+# Persist identity + social graph outside the repo so a git pull never wipes it.
+Environment=PORT=4710
+Environment=SHIK_NAME=pi-kernel
+Environment=SHIK_DATA=/home/pi/.shik/kernel.json
+Environment=SHIK_ROLES=research_companion,org:HappyAlien
+# npx is used so no global tsx install is required.
+ExecStart=/usr/bin/npx tsx kernel-daemon/server.ts
+Restart=on-failure
+RestartSec=3
+# Light hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
