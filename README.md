@@ -69,7 +69,8 @@ gcloud run deploy shik-live --source . --region us-central1
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | Google AI Studio API key |
+| `GEMINI_API_KEY` | Google AI Studio API key — powers the realtime **voice** loop (Gemini Live) |
+| `ANTHROPIC_API_KEY` | Anthropic API key — powers the **mind** (Claude Opus 4.8 kernel cognition, v2). Without it, cognition degrades gracefully and the voice loop still works |
 | `GCP_PROJECT_ID` | Google Cloud project ID |
 | `FIREBASE_PROJECT_ID` | Firestore project ID (optional) |
 

@@ -76,9 +76,24 @@ from v1, but now:
   first-person: *"I am SHIK. I am currently in shik-pi-01. I can see, hear,
   speak, and light up. I remember 14 things about you."*
 
-### 5. The Cognition Engine (replaceable)
-Gemini Live stays the default reasoning engine, but it is explicitly a
-peripheral like the body — selected per session, swappable, never the identity.
+### 5. The Cognition Engine (replaceable — and decomposable)
+Cognition is a peripheral like the body, and v2 takes that one step further: it
+**splits cognition into two halves** instead of asking one model to be both.
+
+- **Voice (mouth/ears) — Gemini Live.** Native real-time speech-to-speech with
+  interruptible turn-taking. This is the right tool for the live loop; Claude has
+  no native speech-to-speech API, so it is *not* used here.
+- **Mind (identity + reasoning) — Claude (Opus 4.8).** Curates the Identity
+  Kernel, maintains the first-person self-model, and **chooses the agent's
+  actions**. This is where Claude is strongest, and it lands cleanly on SHIK's
+  architecture: the **Action Bus is Claude tool use** (`light`/`display`/`notify`
+  are tools it calls), kernel curation is a single structured tool call, and the
+  persistent identity becomes a prompt-cached prefix plus a memory surface.
+
+Neither half is the identity — both are swappable. Claude proposes only
+non-speech actions, so the two halves never contend for the agent's voice. See
+`src/app/api/cognition/route.ts` (the mind) and `src/lib/gemini-direct.ts` (the
+voice).
 
 ```
         ┌──────────────── IDENTITY (the agent) ────────────────┐
@@ -147,9 +162,11 @@ and the on-device runtime.
 - **M0 — Contracts (this commit).** Vision, hardware spec, and the
   `embodiment.ts` schema (Embodiment Manifest, Perception Bus, Action Bus,
   portable Self-Model). No behavior change to v1 yet.
-- **M1 — Agent-perspective UI in the browser body.** Re-skin the existing app to
-  the cockpit layout, driven by a `browser` embodiment manifest. Still Gemini +
-  Firestore; no hardware needed. Proves the new interface model.
+- **M1 — Agent-perspective UI in the browser body (done).** Cockpit layout
+  (`src/app/page.tsx`) driven by the `browser` manifest and `use-embodiment.ts`:
+  first-person self-model, perception feed, body diagram, action log, presence
+  history. Cognition is now decomposed — Gemini Live for voice, **Claude
+  (Opus 4.8) for the mind** (`/api/cognition`). No hardware needed.
 - **M2 — Pi runtime (headless).** A Node/Python agent on the Pi that captures
   mic/camera, streams to Gemini Live, plays audio, drives an LED for status, and
   syncs the kernel to Firestore. SHIK can now wake up in a body.
