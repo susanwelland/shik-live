@@ -1,0 +1,16 @@
+{
+  "name": "shik-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SHIK v2 — the on-device daemon that embodies the agent in a Raspberry Pi body (shik-pi-01).",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
