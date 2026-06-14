@@ -1,26 +1,12 @@
-// SHIK v2 — client helper for the Claude cognition (mind) layer.
-// Calls the server-side /api/cognition route, which runs Claude (Opus 4.8) to
-// curate the Identity Kernel and propose Action-Bus actions. See the route for
-// the decomposed-cognition rationale.
+// SHIK v2 — client helper for the cognition (mind) layer.
+// Calls the provider-agnostic /api/cognition route. The mind behind it is
+// selected server-side by config (SHIK_MIND_PROVIDER) — see kernel-interface.ts.
+import { CognitionTurn, KernelDelta } from './kernel-interface';
 
-export interface CognitionResult {
-  kernelUpdates: {
-    newCoreMemories: { content: string; sourceType: 'voice' | 'visual' | 'inferred'; confidence: number }[];
-    newSessionContext: { content: string; sourceType: 'voice' | 'visual' | 'inferred' }[];
-    currentTopic: string | null;
-  };
-  selfReflection: string;
-  actions: { kind: 'light' | 'display' | 'notify'; intent?: string; text?: string }[];
-  events: string[];
-}
+// Back-compat alias — the browser still thinks in terms of a "cognition result".
+export type CognitionResult = KernelDelta;
 
-export async function runCognition(input: {
-  userText: string;
-  agentText: string;
-  currentMemories: string[];
-  currentContext: string[];
-  bodyName: string;
-}): Promise<CognitionResult | null> {
+export async function runCognition(input: CognitionTurn): Promise<CognitionResult | null> {
   try {
     const response = await fetch('/api/cognition', {
       method: 'POST',

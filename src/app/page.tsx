@@ -39,15 +39,19 @@ export default function ShikLive() {
   const [textInput, setTextInput] = useState('');
   const [currentAgentText, setCurrentAgentText] = useState('');
   const [lastSpoken, setLastSpoken] = useState('');
+  const [lastDisplay, setLastDisplay] = useState('');
 
   const kernel = useKernel();
   const embodiment = useEmbodiment();
 
   // Refs so the once-only Gemini setup effect always reaches the latest state.
+  // Updated in an effect (not during render) per the rules of hooks.
   const kernelRef = useRef(kernel);
-  kernelRef.current = kernel;
   const embodimentRef = useRef(embodiment);
-  embodimentRef.current = embodiment;
+  useEffect(() => {
+    kernelRef.current = kernel;
+    embodimentRef.current = embodiment;
+  });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -127,7 +131,7 @@ export default function ShikLive() {
                 if (result.selfReflection) e.setReflection(result.selfReflection);
                 for (const a of result.actions || []) {
                   if (a.kind === 'light' && a.intent) e.addAction({ kind: 'light', intent: a.intent as PresenceIntent });
-                  else if (a.kind === 'display' && a.text) e.addAction({ kind: 'display', text: a.text });
+                  else if (a.kind === 'display' && a.text) { e.addAction({ kind: 'display', text: a.text }); setLastDisplay(a.text); }
                   else if (a.kind === 'notify' && a.text) e.addAction({ kind: 'notify', text: a.text });
                 }
                 for (const evt of result.events || []) k.addEvent('mind', evt);
@@ -408,7 +412,8 @@ export default function ShikLive() {
                 </p>
                 <p className="text-sm text-[var(--shik-text-muted)] mt-1">
                   I remember {self.coreMemoryCount} thing{self.coreMemoryCount === 1 ? '' : 's'} ·
-                  thinking with <span className="text-[var(--shik-text)]">{self.currentBody?.cognitionEngine || 'gemini'} + claude-opus-4-8</span>
+                  voice <span className="text-[var(--shik-text)]">{self.currentBody?.cognitionEngine || 'gemini'}</span> ·
+                  mind <span className="text-[var(--shik-text)]">a swappable kernel client</span>
                 </p>
                 {embodiment.reflection && (
                   <p className="text-sm italic text-[var(--shik-accent-light)] mt-2">“{embodiment.reflection}”</p>
@@ -447,6 +452,13 @@ export default function ShikLive() {
                 <p className="text-sm text-[var(--shik-text-muted)]">{lastSpoken}</p>
               ) : (
                 <p className="text-sm text-[var(--shik-text-muted)] italic">Silent.</p>
+              )}
+              {lastDisplay && (
+                <div className="mt-3 pt-3 border-t border-[var(--shik-border)] flex items-center gap-2">
+                  <span className="text-xs uppercase tracking-wide text-[var(--shik-success)]">display</span>
+                  <span className="text-sm text-[var(--shik-text)]">{lastDisplay}</span>
+                  <span className="text-xs text-[var(--shik-text-muted)] ml-auto">(→ e-ink/LCD on the Pi body)</span>
+                </div>
               )}
             </div>
 

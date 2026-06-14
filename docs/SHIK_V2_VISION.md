@@ -162,11 +162,15 @@ and the on-device runtime.
 - **M0 — Contracts (this commit).** Vision, hardware spec, and the
   `embodiment.ts` schema (Embodiment Manifest, Perception Bus, Action Bus,
   portable Self-Model). No behavior change to v1 yet.
-- **M1 — Agent-perspective UI in the browser body (done).** Cockpit layout
+- **M1 — Agent-perspective UI + model-independent mind (done).** Cockpit layout
   (`src/app/page.tsx`) driven by the `browser` manifest and `use-embodiment.ts`:
   first-person self-model, perception feed, body diagram, action log, presence
-  history. Cognition is now decomposed — Gemini Live for voice, **Claude
-  (Opus 4.8) for the mind** (`/api/cognition`). No hardware needed.
+  history. Cognition is decomposed (Gemini Live = voice; the mind = a separate
+  engine) **and model-agnostic**: the mind is reached through one standard
+  interface (`src/lib/kernel-interface.ts`) and selected by config
+  (`SHIK_MIND_PROVIDER`) — Claude is one provider (`src/lib/providers/`), and
+  adding another is a new file, not a refactor. This is the build expression of
+  the model-independence thesis and the MCP paper's "swap the model in one line".
 - **M2 — Pi runtime (headless).** A Node/Python agent on the Pi that captures
   mic/camera, streams to Gemini Live, plays audio, drives an LED for status, and
   syncs the kernel to Firestore. SHIK can now wake up in a body.
