@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@google-cloud/firestore": "^8.3.0",
     "@google/genai": "^1.45.0",
     "@google/generative-ai": "^0.24.1",

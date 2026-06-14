@@ -69,7 +69,8 @@ gcloud run deploy shik-live --source . --region us-central1
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | Google AI Studio API key |
+| `GEMINI_API_KEY` | Google AI Studio API key — powers the realtime **voice** loop (Gemini Live) |
+| `ANTHROPIC_API_KEY` | Anthropic API key — powers the **mind** (Claude Opus 4.8 kernel cognition, v2). Without it, cognition degrades gracefully and the voice loop still works |
 | `GCP_PROJECT_ID` | Google Cloud project ID |
 | `FIREBASE_PROJECT_ID` | Firestore project ID (optional) |
 
@@ -91,6 +92,16 @@ SHIK Live is a prototype implementation of concepts from "Self-Hosted Identity K
 - **AI Engine:** Google GenAI SDK → Gemini 2.0 Flash (Live API)
 - **Persistence:** Cloud Firestore
 - **Hosting:** Google Cloud Run
+
+## SHIK v2 — Embodiment (in progress)
+
+Phase 1 (this app) is a spectator dashboard. **SHIK v2** reimagines the
+interface from the *agent's* perspective and gives SHIK a physical body (a
+Raspberry Pi) so its identity becomes portable across bodies. See:
+
+- [`docs/SHIK_V2_VISION.md`](docs/SHIK_V2_VISION.md) — the vision and v2 layout
+- [`docs/HARDWARE_RPI.md`](docs/HARDWARE_RPI.md) — the Raspberry Pi body (`shik-pi-01`)
+- [`src/lib/embodiment.ts`](src/lib/embodiment.ts) — the Embodiment / Perception / Action / Self-Model contracts
 
 ## License
 
