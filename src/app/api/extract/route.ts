@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { callEngine, EngineId } from '@/lib/engines';
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Identity-kernel memory extractor. Runs on the SAME pluggable engine as
+// cognition — so when the agent is on a self-hosted local model, the thing that
+// *populates* its memory M is also local. No cloud dependency required.
 
 export async function POST(request: NextRequest) {
   try {
-    const { userText, agentText, currentMemories, currentContext } = await request.json();
+    const { userText, agentText, currentMemories, currentContext, engine } =
+      (await request.json()) as {
+        userText: string;
+        agentText: string;
+        currentMemories?: string[];
+        currentContext?: string[];
+        engine?: EngineId;
+      };
 
     if (!userText && !agentText) {
       return NextResponse.json({ error: 'No text provided' }, { status: 400 });
     }
 
-    const model = genai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const system =
+      'You are an identity kernel processor. You extract durable, self-relevant ' +
+      'facts from a conversation turn and return ONLY valid minified JSON.';
 
-    const prompt = `You are an identity kernel processor. Extract structured updates from this conversation turn. Return ONLY valid JSON, no markdown.
+    const prompt = `Extract structured identity-kernel updates from this turn. Return ONLY JSON, no markdown.
 
 USER SAID: ${userText}
 AGENT SAID: ${agentText}
@@ -21,43 +32,28 @@ AGENT SAID: ${agentText}
 EXISTING MEMORIES: ${JSON.stringify(currentMemories || [])}
 EXISTING CONTEXT: ${JSON.stringify(currentContext || [])}
 
-Return this exact structure:
-{
-  "newCoreMemories": [{"content":"...", "sourceType":"voice", "confidence": 0.0-1.0}],
-  "newSessionContext": [{"content":"...", "sourceType":"voice"}],
-  "currentTopic": "short description",
-  "events": ["what happened"]
-}
+Return exactly this structure:
+{"newCoreMemories":[{"content":"...","sourceType":"voice","confidence":0.0}],"newSessionContext":[{"content":"...","sourceType":"voice"}],"currentTopic":"short description","events":["what happened"]}
 
-EXTRACT as core memory (confidence >= 0.7):
-- Name, role, organization
-- Projects, research areas, expertise  
-- Stated preferences
-- Important facts about the user
+EXTRACT as core memory (confidence >= 0.7): name, role, organization, projects, research areas, expertise, stated preferences, important facts about the USER.
+DO NOT EXTRACT: greetings/filler/small talk, things already in existing memories, anything the AGENT said, vague info.
+Most turns produce 0-1 core memories. Be selective.`;
 
-DO NOT EXTRACT:
-- Greetings, filler, small talk
-- Things already in existing memories
-- Anything the AGENT said (extract from USER statements only)
-- Vague or uncertain information
+    const raw = await callEngine(engine || 'gemini', system, prompt);
 
-Most turns produce 0-1 core memories. Be selective but not stingy - if the user shares real info about themselves, capture it.`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    
-    // Clean up any markdown formatting
-    const cleanJson = text.replace(/```json\n?|```\n?/g, '').trim();
+    // Tolerate models that wrap JSON in code fences or prose.
+    const match = raw.match(/\{[\s\S]*\}/);
+    const cleanJson = (match ? match[0] : raw).replace(/```json\n?|```\n?/g, '').trim();
     const parsed = JSON.parse(cleanJson);
-    
+
     return NextResponse.json(parsed);
   } catch (error) {
     console.error('Extraction error:', error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       newCoreMemories: [],
       newSessionContext: [],
       currentTopic: null,
-      events: ['extraction_failed']
+      events: ['extraction_failed'],
     });
   }
 }

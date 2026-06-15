@@ -3,7 +3,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GeminiDirectClient } from '@/lib/gemini-direct';
 import { useKernel } from '@/lib/use-kernel';
+import { useIdentity } from '@/lib/use-identity';
+import IdentityKernelPanel from '@/components/IdentityKernelPanel';
 import { extractKernelUpdates } from '@/lib/extract-kernel';
+import { runCognition, EngineId } from '@/lib/cognition-adapter';
+import Link from 'next/link';
+
+// Map the engine-selector label (identity.activeEngine) to an adapter engine id.
+// The "native audio" engine is the realtime voice path (Gemini Live); the rest
+// are text-mode engines routed through the model-agnostic cognition adapter.
+function resolveEngine(label: string): { live: boolean; id: EngineId } {
+  if (label.includes('native audio')) return { live: true, id: 'gemini' };
+  if (label.toLowerCase().includes('local') || label.toLowerCase().includes('llama')) return { live: false, id: 'ollama' };
+  if (label.toLowerCase().includes('claude')) return { live: false, id: 'claude' };
+  return { live: false, id: 'gemini' };
+}
 
 interface Message {
   role: 'user' | 'agent';
@@ -21,8 +35,10 @@ export default function ShikLive() {
   const [textInput, setTextInput] = useState('');
   const [currentAgentText, setCurrentAgentText] = useState('');
   
-  // Firestore-backed kernel state
+  // Firestore-backed kernel state (live demo memory + event log)
   const kernel = useKernel();
+  // Self-Hosted Identity Kernel — the persistent self-model I = ⟨id, K, P, M, H⟩
+  const identity = useIdentity();
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,6 +118,8 @@ export default function ShikLive() {
             
             kernel.incrementTurn();
             kernel.addEvent('turn_complete', 'Response complete');
+            // Append an append-only entry to the identity kernel's history H
+            identity.noteTurn(`Agent: ${agentText.slice(0, 60)}`);
 
             // Run extraction in background (don't await)
             const lastUserMsg = pendingUserMessageRef.current;
@@ -117,6 +135,14 @@ export default function ShikLive() {
                 for (const mem of updates.newCoreMemories || []) {
                   if (mem.confidence >= 0.7) {
                     kernel.addMemory(mem.content, mem.sourceType || 'voice', 'conversation', mem.confidence);
+                    // Commit to the persistent identity kernel as semantic memory
+                    identity.addMemory({
+                      content: mem.content,
+                      kind: 'semantic',
+                      sourceType: mem.sourceType || 'voice',
+                      provenance: 'conversation',
+                      confidence: mem.confidence,
+                    });
                   }
                 }
                 for (const ctx of updates.newSessionContext || []) {
@@ -266,7 +292,10 @@ export default function ShikLive() {
   };
 
   const sendTextMessage = async (text: string) => {
-    if (!text.trim() || !isConnected) return;
+    if (!text.trim()) return;
+
+    const engine = resolveEngine(identity.activeEngine);
+    if (engine.live && !isConnected) return;
 
     pendingUserMessageRef.current = text;  // Store for extraction
 
@@ -286,7 +315,62 @@ export default function ShikLive() {
     kernel.addContext(text.slice(0, 100), 'voice');
 
     setStatus('thinking');
-    geminiRef.current?.sendText(text);
+
+    if (engine.live) {
+      // Realtime voice engine (Gemini Live) — streamed via the websocket session
+      geminiRef.current?.sendText(text);
+      return;
+    }
+
+    // Model-agnostic cognition adapter path: same identity kernel, swapped engine.
+    kernel.addEvent('cognition_dispatch', `Routing turn to ${engine.id} (identity unchanged)`);
+    try {
+      const result = await runCognition({
+        engine: engine.id,
+        message: text,
+        context: {
+          id: identity.identity?.id || 'did:shik:unknown',
+          roles: identity.identity?.roles || [],
+          policies: (identity.identity?.policies || []).map(p => p.statement),
+          memories: (identity.identity?.memory || []).map(m => m.content),
+          historyTip: identity.commitments?.history_tip,
+        },
+      });
+      setMessages(prev => [...prev, { role: 'agent', content: result.text, timestamp: new Date() }]);
+      kernel.incrementTurn();
+      identity.noteTurn(`Agent (${engine.id}): ${result.text.slice(0, 56)}`);
+
+      // Populate memory M using the SAME engine — no cloud dependency on the
+      // local-model path. (Best-effort; failures don't break the turn.)
+      extractKernelUpdates(
+        text,
+        result.text,
+        (identity.identity?.memory || []).map(m => m.content),
+        kernel.sessionContext.map(c => c.content),
+        engine.id,
+      ).then(updates => {
+        if (!updates) return;
+        for (const mem of updates.newCoreMemories || []) {
+          if (mem.confidence >= 0.7) {
+            kernel.addMemory(mem.content, mem.sourceType || 'inferred', 'conversation', mem.confidence);
+            identity.addMemory({
+              content: mem.content,
+              kind: 'semantic',
+              sourceType: mem.sourceType || 'inferred',
+              provenance: `conversation:${engine.id}`,
+              confidence: mem.confidence,
+            });
+          }
+        }
+        if (updates.currentTopic) kernel.updateTopic(updates.currentTopic);
+      }).catch(() => {});
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMessages(prev => [...prev, { role: 'agent', content: `⚠️ ${engine.id} unavailable: ${msg}`, timestamp: new Date() }]);
+      kernel.addEvent('error', msg);
+    } finally {
+      setStatus('idle');
+    }
   };
 
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -296,6 +380,11 @@ export default function ShikLive() {
       setTextInput('');
     }
   };
+
+  // The realtime voice engine needs a live session; text-mode engines (routed
+  // through the cognition adapter) work without one — that IS model independence.
+  const activeEngine = resolveEngine(identity.activeEngine);
+  const canType = (activeEngine.live ? isConnected : true) && status !== 'thinking' && status !== 'speaking';
 
   return (
     <div className="h-screen flex flex-col bg-[var(--shik-bg)]">
@@ -328,7 +417,10 @@ export default function ShikLive() {
       <header className="flex items-center justify-between px-6 py-3 border-b border-[var(--shik-border)] bg-[var(--shik-surface)]">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-white">SHIK Live</h1>
-          <span className="text-xs text-[var(--shik-text-muted)]">Watch an AI build persistent identity in real time</span>
+          <span className="text-xs text-[var(--shik-text-muted)] hidden md:inline">Watch an AI build persistent identity in real time</span>
+          <Link href="/research" className="text-xs text-[var(--shik-accent)] hover:text-[var(--shik-accent-light)] border border-[var(--shik-border)] rounded-full px-3 py-1">
+            Research &amp; Architecture ↗
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           {isConnected ? (
@@ -417,13 +509,13 @@ export default function ShikLive() {
                 type="text"
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                placeholder={isConnected ? "Type a message..." : "Start session first"}
-                disabled={!isConnected || status === 'thinking' || status === 'speaking'}
+                placeholder={canType ? (activeEngine.live ? "Type a message..." : `Type a message (${activeEngine.id})...`) : "Start session first"}
+                disabled={!canType}
                 className="flex-1 px-3 py-2 rounded text-sm bg-[var(--shik-surface-light)] border border-[var(--shik-border)] text-white placeholder-[var(--shik-text-muted)] disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={!isConnected || !textInput.trim() || status === 'thinking' || status === 'speaking'}
+                disabled={!canType || !textInput.trim()}
                 className="px-4 py-2 rounded text-sm font-medium bg-[var(--shik-accent)] text-white disabled:opacity-50"
               >
                 Send
@@ -502,75 +594,15 @@ export default function ShikLive() {
 
         {/* Right Panel - Identity Kernel */}
         <div className="w-1/3 flex flex-col">
-          <div className="px-4 py-2 border-b border-[var(--shik-border)] bg-[var(--shik-surface)]">
-            <h2 className="text-sm font-semibold text-[var(--shik-accent)]">IDENTITY KERNEL</h2>
-            <p className="text-xs text-[var(--shik-text-muted)] mt-1">While Gemini handles the conversation, this panel shows the agent&apos;s persistent self — updating live.</p>
+          <div className="px-4 py-2 border-b border-[var(--shik-border)] bg-[var(--shik-surface)] flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--shik-accent)]">IDENTITY KERNEL</h2>
+              <p className="text-xs text-[var(--shik-text-muted)] mt-1">The agent&apos;s self <span className="font-mono">I = ⟨id, K, P, M, H⟩</span> — self-hosted, portable, swap-proof.</p>
+            </div>
+            <Link href="/research" className="text-xs text-[var(--shik-accent)] hover:text-[var(--shik-accent-light)] shrink-0 ml-2" title="How this maps to the paper">paper ↗</Link>
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Core Memory */}
-            <div>
-              <h3 className="text-xs font-semibold text-[var(--shik-warning)] mb-2">CORE MEMORY</h3>
-              <div className="space-y-2">
-                {kernel.coreMemories.length === 0 ? (
-                  <p className="text-xs text-[var(--shik-text-muted)] italic">Memories will appear here as the agent learns from your conversation.</p>
-                ) : (
-                  kernel.coreMemories.map(mem => (
-                    <div key={mem.id} className="p-2 rounded bg-[var(--shik-surface)] text-xs border border-[var(--shik-border)]">
-                      <p>{mem.content}</p>
-                      <div className="flex justify-between mt-1 text-[var(--shik-text-muted)]">
-                        <span>{mem.sourceType}</span>
-                        <span>{(mem.confidence * 100).toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
 
-            {/* Session Context */}
-            <div>
-              <h3 className="text-xs font-semibold text-[var(--shik-success)] mb-2">SESSION CONTEXT</h3>
-              <div className="space-y-2">
-                {kernel.sessionContext.length === 0 ? (
-                  <p className="text-xs text-[var(--shik-text-muted)] italic">Session-specific context will build up as you interact.</p>
-                ) : (
-                  kernel.sessionContext.map(ctx => (
-                    <div key={ctx.id} className="p-2 rounded bg-[var(--shik-surface)] text-xs border border-[var(--shik-border)]">
-                      <p>{ctx.content}</p>
-                      <span className="text-[var(--shik-text-muted)]">{ctx.sourceType}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Continuity State */}
-            <div>
-              <h3 className="text-xs font-semibold text-[var(--shik-accent)] mb-2">CONTINUITY STATE</h3>
-              <div className="p-3 rounded bg-[var(--shik-surface)] border border-[var(--shik-border)] text-xs space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-[var(--shik-text-muted)]">Current Topic</span>
-                  <span>{kernel.currentTopic || <span className="italic text-[var(--shik-text-muted)]">Start talking</span>}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--shik-text-muted)]">Turn Count</span>
-                  <span>{kernel.turnCount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--shik-text-muted)]">Status</span>
-                  <span className={`px-1 rounded ${
-                    status === 'listening' ? 'bg-[var(--shik-success)]/20 text-[var(--shik-success)]' :
-                    status === 'thinking' ? 'bg-[var(--shik-warning)]/20 text-[var(--shik-warning)]' :
-                    status === 'speaking' ? 'bg-[var(--shik-accent)]/20 text-[var(--shik-accent)]' :
-                    'bg-[var(--shik-surface-light)]'
-                  }`}>
-                    {status}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <IdentityKernelPanel id={identity} sessionContext={kernel.sessionContext} />
         </div>
       </main>
 
