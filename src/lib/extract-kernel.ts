@@ -5,7 +5,8 @@ export async function extractKernelUpdates(
   userText: string,
   agentText: string,
   currentMemories: string[],
-  currentContext: string[]
+  currentContext: string[],
+  engine: 'gemini' | 'ollama' | 'claude' = 'gemini'
 ) {
   try {
     const response = await fetch('/api/extract', {
@@ -16,6 +17,7 @@ export async function extractKernelUpdates(
         agentText,
         currentMemories,
         currentContext,
+        engine,
       }),
     });
 

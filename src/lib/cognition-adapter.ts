@@ -6,7 +6,8 @@
 // outputs back into a uniform shape. Swapping the engine — cloud Gemini, a
 // local self-hosted Llama, Claude — never touches the identity state I.
 
-export type EngineId = 'gemini' | 'ollama' | 'claude';
+export type { EngineId } from './engines';
+import type { EngineId } from './engines';
 
 export interface KernelContext {
   id: string;

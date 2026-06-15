@@ -59,7 +59,8 @@ export default function ResearchPage() {
             ['mapping', 'Paper → demo'],
             ['gaps', 'What is still missing'],
             ['hardware', 'Self-hosting & hardware'],
-            ['evaluation', 'Evaluation plan'],
+            ['evaluation', 'Evaluation'],
+            ['honesty', 'Limitations'],
             ['roadmap', 'Forward roadmap'],
           ].map(([href, label]) => (
             <a key={href} href={`#${href}`} className="px-3 py-1 rounded-full bg-[var(--shik-surface-light)] text-[var(--shik-text-muted)] hover:text-white border border-[var(--shik-border)]">
@@ -231,12 +232,25 @@ C = ⟨ I, E, R ⟩                // runtime configuration`}
           </p>
         </Section>
 
-        <Section id="evaluation" title="Evaluation plan (Section 10.3)">
-          <p>The paper proposes three evaluation axes. Each is directly measurable with this artifact extended:</p>
+        <Section id="evaluation" title="Evaluation — preliminary results">
+          <p>
+            A reproducible harness lives in <span className="font-mono">eval/</span> (<span className="font-mono">npm run eval</span>).
+            Two of the paper&apos;s three axes (§10.3) already produce real numbers; the third is instrumented and runs with any engine.
+          </p>
+          <p className="text-[var(--shik-text-muted)]"><strong className="text-[var(--shik-text)]">Overhead vs. state size</strong> (x64, mean of 5 reps): handshake <em>verification</em> is ~constant at ~0.5 ms (one ECDSA op), so inter-agent recognition is cheap no matter how much an agent remembers. Commitment cost grows linearly with memory (full Merkle recompute) — 9 ms at 100 entries, ~365 ms at 5000 — an honest efficiency limitation that an incremental Merkle tree fixes (<span className="font-mono">O(log N)</span>).</p>
+          <p className="text-[var(--shik-text-muted)]"><strong className="text-[var(--shik-text)]">Identity continuity under model swap</strong>: across 50 swaps over 5 engines, the identifier and the memory/policy commitments are preserved 100%, handshakes still verify 100%, and a control violation (removing a core safety policy) is detected. This is identity <em>auditability</em>.</p>
+          <p className="text-[var(--shik-text-muted)]"><strong className="text-[var(--shik-text)]">Behavioral memory-honoring under swap</strong>: with identical kernel state, the spread in how faithfully different engines honor stored facts <em>measures</em> the gap between cryptographic and behavioral continuity (below).</p>
+        </Section>
+
+        <Section id="honesty" title="Limitations & open questions">
+          <p>
+            The single most credibility-raising thing a proposal can do is name its own limits precisely. The full write-up is in{' '}
+            <span className="font-mono">docs/LIMITATIONS_AND_OPEN_QUESTIONS.md</span>. In short:
+          </p>
           <ul className="list-disc pl-5 space-y-1 text-[var(--shik-text-muted)]">
-            <li><strong className="text-[var(--shik-text)]">Behavioral stability under model swaps.</strong> Hold a conversation, swap engines, measure how consistently the agent honors stored memory/policy vs. a baseline with no kernel.</li>
-            <li><strong className="text-[var(--shik-text)]">Long-term relationship continuity.</strong> Repeated handshakes between agents; measure correct re-recognition and trust evolution.</li>
-            <li><strong className="text-[var(--shik-text)]">Overhead on constrained hardware.</strong> Time to compute commitments, sign handshakes, and replicate state on a Pi as M and H grow.</li>
+            <li><strong className="text-[var(--shik-text)]">Cryptographic continuity ≠ behavioral continuity.</strong> The kernel preserves and proves the <em>record</em> of self; it does not make a weak engine behave like a strong one. This is the central open question — and we measure it rather than hide it.</li>
+            <li><strong className="text-[var(--shik-text)]">Differentiation.</strong> SHIK reuses memory stores and DIDs deliberately; the contribution is the <em>checkable invariants and state commitments</em>, not the &quot;selfhood&quot; metaphor.</li>
+            <li><strong className="text-[var(--shik-text)]">Unfinished by design.</strong> Hardware key custody, decentralized replication (§4.6), and a substantive trust model are scoped future work.</li>
           </ul>
         </Section>
 

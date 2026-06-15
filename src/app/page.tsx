@@ -339,6 +339,31 @@ export default function ShikLive() {
       setMessages(prev => [...prev, { role: 'agent', content: result.text, timestamp: new Date() }]);
       kernel.incrementTurn();
       identity.noteTurn(`Agent (${engine.id}): ${result.text.slice(0, 56)}`);
+
+      // Populate memory M using the SAME engine — no cloud dependency on the
+      // local-model path. (Best-effort; failures don't break the turn.)
+      extractKernelUpdates(
+        text,
+        result.text,
+        (identity.identity?.memory || []).map(m => m.content),
+        kernel.sessionContext.map(c => c.content),
+        engine.id,
+      ).then(updates => {
+        if (!updates) return;
+        for (const mem of updates.newCoreMemories || []) {
+          if (mem.confidence >= 0.7) {
+            kernel.addMemory(mem.content, mem.sourceType || 'inferred', 'conversation', mem.confidence);
+            identity.addMemory({
+              content: mem.content,
+              kind: 'semantic',
+              sourceType: mem.sourceType || 'inferred',
+              provenance: `conversation:${engine.id}`,
+              confidence: mem.confidence,
+            });
+          }
+        }
+        if (updates.currentTopic) kernel.updateTopic(updates.currentTopic);
+      }).catch(() => {});
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setMessages(prev => [...prev, { role: 'agent', content: `⚠️ ${engine.id} unavailable: ${msg}`, timestamp: new Date() }]);

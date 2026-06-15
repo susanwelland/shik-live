@@ -1,0 +1,6 @@
+memory_and_history_entries,commit_ms,sign_handshake_ms,verify_handshake_ms
+0,0.492,1.518,0.661
+10,1.159,2.090,0.411
+100,9.321,10.192,0.444
+1000,73.170,74.994,0.349
+5000,365.415,370.650,0.504
